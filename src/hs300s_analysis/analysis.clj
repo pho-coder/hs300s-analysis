@@ -43,11 +43,12 @@
      :sell-trans-amount big-sell-trans-amount
      :normal-trans-amount big-normal-trans-amount}))
 
-(defn analysis-one-day [path dt & {:keys [big-amount big-volume start-time end-time]
+(defn analysis-one-day [path dt & {:keys [big-amount big-volume start-time end-time top]
                                    :or {big-amount 0
                                         big-volume 0
                                         start-time "09:00:00"
-                                        end-time "15:30:00"}}]
+                                        end-time "15:30:00"
+                                        top 10}}]
   (let [today-dir (str path "/" dt)
         list-file (str today-dir "/list")
         codes (with-open [r (clojure.java.io/reader list-file)]
@@ -55,23 +56,41 @@
                        l (.readLine r)]
                   (if (nil? l)
                     codes
-                    (recur (conj codes (first (clojure.string/split l #",")))
-                           (.readLine r)))))
+                    (let [[code weight name] (clojure.string/split l #",")]
+                      (recur (conj codes {:code code
+                                          :weight weight
+                                          :name name})
+                             (.readLine r))))))
         one-day (incanter/to-dataset
                  (loop [codes codes
                         re []]
                    (if (empty? codes)
                      re
-                     (let [code (first codes)
+                     (let [c (first codes)
+                           code (:code c)
                            code-file (str today-dir "/" code ".csv")
                            one (assoc (analysis-one (utils/read-csv code-file)
                                                     :big-amount big-amount
                                                     :big-volume big-volume
                                                     :start-time start-time
                                                     :end-time end-time)
-                                      :code code)]
+                                      :code code
+                                      :name (:name c)
+                                      :weight (:weight c))]
                        (recur (rest codes)
                               (conj re one))))))
+        one-day-top-buy-trans-amount (incanter/sel (incanter/$order :buy-trans-amount
+                                                                    :desc
+                                                                    (incanter/$where {:type {:$fn (fn [t]
+                                                                                                    (= t "buy"))}}
+                                                                                     one-day))
+                                                   :rows (range top))
+        one-day-top-sell-trans-amount (incanter/sel (incanter/$order :sell-trans-amount
+                                                                     :desc
+                                                                     (incanter/$where {:type {:$fn (fn [t]
+                                                                                                     (= t "sell"))}}
+                                                                                      one-day))
+                                                    :rows (range top))
         agg-trans (incanter/aggregate [:buy-trans-amount
                                        :sell-trans-amount
                                        :normal-trans-amount]
@@ -83,7 +102,9 @@
                                       :dataset one-day
                                       :rollup-fun :count)
         summary (incanter/$join [:type :type] agg-trans agg-count)]
-    summary))
+    {:summary summary
+     :top-trans-amount (incanter/conj-rows one-day-top-buy-trans-amount
+                                           one-day-top-sell-trans-amount)}))
 
 (defn summary-one-day [path dt]
   (let [all (analysis-one-day path dt)

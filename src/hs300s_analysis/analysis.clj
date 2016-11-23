@@ -108,10 +108,12 @@
 
 (defn summary-one-day [path dt]
   (let [all (analysis-one-day path dt)
+        morning (analysis-one-day path dt :end-time "12:00:00")
         afternoon (analysis-one-day path dt :start-time "12:30:00")
         volume-400 (analysis-one-day path dt :big-volume 400)
         amount-10 (analysis-one-day path dt :big-amount 100000)]
     {:all all
+     :morning morning
      :afternoon afternoon
      :volume-400 volume-400
      :amount-10 amount-10}))
